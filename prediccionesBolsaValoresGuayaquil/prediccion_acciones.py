@@ -5,16 +5,19 @@ import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from sklearn.preprocessing import MinMaxScaler
+import tkinter as tk
+from tkinter import ttk
+from tkinter import messagebox
+from datetime import datetime
 
-# drive.mount('/content/drive')
-
-def cargar_datos(ruta_archivo):
+# Cargar el archivo CSV automáticamente
+def cargar_datos():
+    ruta_archivo = 'stats_BVG_latest.csv'
     df = pd.read_csv(ruta_archivo)
     return df
 
 def preprocesar_datos(df):
-    # Verificar si la columna 'Último Precio' existe en el DataFrame
-    if 'Último Precio':
+    if 'Último Precio' in df.columns:
         closing_price = df['Último Precio']
     else:
         raise KeyError(f"No se encontró la columna 'Último Precio' en el DataFrame. Columnas disponibles: {df.columns.tolist()}")
@@ -51,20 +54,49 @@ def hacer_predicciones(modelo, X_test, scaler):
     predicciones = scaler.inverse_transform(predicciones)
     return predicciones
 
-def visualizar_resultados(df, predicciones, ventana):
-    plt.plot(df['Último Precio'].values, color='blue', label='Precio real')
-    plt.plot(range(ventana, len(predicciones)+ventana), predicciones, color='red', label='Predicciones')
+def visualizar_resultados(df, predicciones, ventana, fecha_inicio, fecha_fin):
+    plt.figure(figsize=(12, 6))
+
+    fechas = pd.to_datetime(df['Fecha'])
+    df.set_index('Fecha', inplace=True)
+
+    plt.plot(fechas, df['Último Precio'], color='blue', label='Precio real')
+
+    fechas_predicciones = pd.date_range(start=fecha_inicio, end=fecha_fin, periods=len(predicciones))
+    plt.plot(fechas_predicciones, predicciones, color='red', label='Predicciones')
+
     plt.title('Predicción de precios de acciones')
-    plt.xlabel('Tiempo')
+    plt.xlabel('Fecha')
     plt.ylabel('Precio de las acciones')
     plt.legend()
+    plt.xticks(rotation=45)
+    plt.tight_layout()
     plt.show()
 
-def main():
-    ruta_archivo = 'stats_BVG_latest.csv'
-    ventana = 60
+def procesar_datos():
+    fecha_inicio = fecha_inicio_entry.get()
+    fecha_fin = fecha_fin_entry.get()
 
-    df = cargar_datos(ruta_archivo)
+    try:
+        # Convertir las fechas de entrada a datetime para validación
+        datetime.strptime(fecha_inicio, "%Y-%m-%d")
+        datetime.strptime(fecha_fin, "%Y-%m-%d")
+    except ValueError:
+        messagebox.showerror("Error", "El formato de fecha debe ser YYYY-MM-DD.")
+        return
+
+    df = cargar_datos()
+    df['Fecha'] = pd.to_datetime(df['Fecha'])  # Asegurarse de que 'Fecha' esté en formato datetime
+
+    # Filtrar los datos según el rango de fechas seleccionado
+    df = df[(df['Fecha'] >= fecha_inicio) & (df['Fecha'] <= fecha_fin)]
+
+    if df.empty:
+        messagebox.showerror("Error", "No hay datos en el rango de fechas seleccionado.")
+        return
+
+    ventana = 60  # Tamaño de ventana fijo
+
     datos_escalados, scaler = preprocesar_datos(df)
     X, y = crear_conjuntos(datos_escalados, ventana)
 
@@ -75,7 +107,23 @@ def main():
     modelo = entrenar_modelo(modelo, X_train, y_train, epochs=50, batch_size=32)
 
     predicciones = hacer_predicciones(modelo, X_test, scaler)
-    visualizar_resultados(df, predicciones, ventana)
+    visualizar_resultados(df, predicciones, ventana, fecha_inicio, fecha_fin)
 
-if __name__ == '__main__':
-    main()
+# Configuración de la interfaz gráfica
+root = tk.Tk()
+root.title("Predicción de Precios de Acciones")
+
+tk.Label(root, text="Fecha de inicio (YYYY-MM-DD):").pack(pady=5)
+fecha_inicio_entry = tk.Entry(root)
+fecha_inicio_entry.pack(pady=5)
+fecha_inicio_entry.insert(0, "2022-01-01")
+
+tk.Label(root, text="Fecha de fin (YYYY-MM-DD):").pack(pady=5)
+fecha_fin_entry = tk.Entry(root)
+fecha_fin_entry.pack(pady=5)
+fecha_fin_entry.insert(0, "2022-12-31")
+
+tk.Button(root, text="Predecir", command=procesar_datos).pack(pady=20)
+
+root.geometry("400x200")  # Tamaño fijo de la ventana
+root.mainloop()
